@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import Dexie from 'dexie';
 import {
@@ -125,6 +125,7 @@ function* handleOpen(
                     const key = await db.metadata.add((<Omit<FileMetadata, 'uuid'>>{
                         path: action.path,
                         sha256,
+                        isVersionControlled: false,
                         viewState: null,
                     }) as FileMetadata);
 
@@ -258,7 +259,11 @@ function* handleWrite(
                     throw new Error(`file handle '${fdInfo.uuid}' does not exist`);
                 }
 
-                await db.metadata.put({ ...metadata, sha256 });
+                await db.metadata.put({
+                    ...metadata,
+                    sha256,
+                    isVersionControlled: action.isVersionControlled,
+                });
                 await db._contents.put({
                     path: metadata.path,
                     contents: action.contents,
@@ -347,7 +352,13 @@ function* handleWriteFile(action: ReturnType<typeof fileStorageWriteFile>): Gene
         defined(didOpen);
 
         try {
-            yield* put(fileStorageWrite(didOpen.fd, action.contents));
+            yield* put(
+                fileStorageWrite(
+                    didOpen.fd,
+                    action.contents,
+                    action.isVersionControlled,
+                ),
+            );
 
             const { didFailToWrite } = yield* race({
                 didWrite: take(fileStorageDidWrite.when((a) => a.fd === didOpen.fd)),

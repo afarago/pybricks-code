@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import 'dexie-observable';
 import Dexie, { Table } from 'dexie';
@@ -22,6 +22,7 @@ export type FileMetadata = Readonly<{
     sha256: string;
     /** The text editor view state. */
     viewState: monaco.editor.ICodeEditorViewState | null;
+    isVersionControlled: boolean;
 }>;
 
 /**
@@ -34,6 +35,7 @@ export type FileContents = {
     path: string;
     /** The contents of the file. */
     contents: string;
+    isVersionControlled?: boolean;
 };
 
 export class FileStorageDb extends Dexie {
@@ -47,7 +49,7 @@ export class FileStorageDb extends Dexie {
     constructor(databaseName: string) {
         super(databaseName);
         this.version(1).stores({
-            metadata: '$$uuid, &path, sha256, viewState',
+            metadata: '$$uuid, &path, sha256, isVersionControlled, viewState',
             _contents: 'path, contents',
         });
     }

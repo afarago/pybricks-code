@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import { createAction } from '../actions';
 import { UUID } from '../fileStorage';
+
 /**
  * Request to archive (download) all files in the store.
  */
@@ -24,6 +25,10 @@ export const explorerDidArchiveAllFiles = createAction(() => ({
 export const explorerDidFailToArchiveAllFiles = createAction((error: Error) => ({
     type: 'explorer.action.didFailToArchiveAllFiles',
     error,
+}));
+
+export const explorerGithubSyncAllFiles = createAction(() => ({
+    type: 'explorer.action.githubSyncAllFiles',
 }));
 
 /**
@@ -156,6 +161,24 @@ export const explorerExportFile = createAction((fileName: string) => ({
     type: 'explorer.action.exportFile',
     fileName,
 }));
+
+export const explorerGistExportFile = createAction((fileName: string) => ({
+    type: 'explorer.action.gistExportFile',
+    fileName,
+}));
+
+export const explorerDidGistExportFile = createAction((fileName: string) => ({
+    type: 'explorer.action.didGistExportFile',
+    fileName,
+}));
+
+export const explorerDidFailGistExportFile = createAction(
+    (fileName: string, error: Error) => ({
+        type: 'explorer.action.didFailGistExportFile',
+        fileName,
+        error,
+    }),
+);
 
 /**
  * Indicates that {@link explorerExportFile} succeeded.

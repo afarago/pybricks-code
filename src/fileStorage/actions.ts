@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import type * as monaco from 'monaco-editor';
 import { createAction } from '../actions';
@@ -127,11 +127,14 @@ export const fileStorageDidFailToRead = createAction((fd: FD, error: Error) => (
  * @param fd A file descriptor that is open for writing.
  * @param contents The contents of the file.
  */
-export const fileStorageWrite = createAction((fd: FD, contents: string) => ({
-    type: 'fileStorage.action.write',
-    fd,
-    contents,
-}));
+export const fileStorageWrite = createAction(
+    (fd: FD, contents: string, isVersionControlled: boolean) => ({
+        type: 'fileStorage.action.write',
+        fd,
+        contents,
+        isVersionControlled,
+    }),
+);
 
 /**
  * Indicates that {@link fileStorageWrite} succeeded.
@@ -193,11 +196,14 @@ export const fileStorageDidFailToReadFile = createAction(
  * @param path: The file path.
  * @param contents: The contents read from the file.
  */
-export const fileStorageWriteFile = createAction((path: string, contents: string) => ({
-    type: 'fileStorage.action.writeFile',
-    path,
-    contents,
-}));
+export const fileStorageWriteFile = createAction(
+    (path: string, contents: string, isVersionControlled: boolean) => ({
+        type: 'fileStorage.action.writeFile',
+        path,
+        contents,
+        isVersionControlled,
+    }),
+);
 
 /**
  * Indicates that {@link fileStorageWriteFile} succeeded.

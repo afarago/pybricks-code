@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2021-2023 The Pybricks Authors
+// Copyright (c) 2021-2024 The Pybricks Authors
 
 import './settings.scss';
 import {
@@ -7,21 +7,24 @@ import {
     ButtonGroup,
     ControlGroup,
     FormGroup,
+    InputGroup,
     Switch,
 } from '@blueprintjs/core';
 import {
     Add,
     Chat,
     Download,
+    GitRepo,
     Help,
     InfoSign,
+    Key,
     Lightbulb,
     Refresh,
     Virus,
 } from '@blueprintjs/icons';
 import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { useTernaryDarkMode } from 'usehooks-ts';
+import { useLocalStorage, useTernaryDarkMode } from 'usehooks-ts';
 import AboutDialog from '../about/AboutDialog';
 import { appCheckForUpdate, appReload, appShowInstallPrompt } from '../app/actions';
 import {
@@ -38,6 +41,7 @@ import { firmwareInstallPybricks } from '../firmware/actions';
 import { firmwareRestoreOfficialDialogShow } from '../firmware/restoreOfficialDialog/actions';
 import { pseudolocalize } from '../i18n';
 import { useSelector } from '../reducers';
+import { useSettingGithubAuth, useSettingGithubGist } from '../settings/hooks';
 import { tourStart } from '../tour/actions';
 import { isMacOS } from '../utils/os';
 import { useI18n } from './i18n';
@@ -56,6 +60,9 @@ const Settings: React.FunctionComponent = () => {
     );
     const promptingInstall = useSelector((s) => s.app.promptingInstall);
     const readyForOfflineUse = useSelector((s) => s.app.readyForOfflineUse);
+
+    const { settingGithubAuth, setSettingGithubAuth } = useSettingGithubAuth();
+    const { settingGithubGist, setSettingGithubGist } = useSettingGithubGist();
 
     const dispatch = useDispatch();
 
@@ -204,6 +211,22 @@ const Settings: React.FunctionComponent = () => {
                     />
                 </FormGroup>
             )}
+            <FormGroup label="GitHub">
+                <InputGroup
+                    title="Authorization"
+                    value={settingGithubAuth}
+                    placeholder="Github authorization"
+                    onChange={(e) => setSettingGithubAuth(e.currentTarget.value)}
+                    leftIcon={<Key />}
+                />
+                <InputGroup
+                    title="GIST"
+                    value={settingGithubGist}
+                    onChange={(e) => setSettingGithubGist(e.currentTarget.value)}
+                    placeholder="Github GIST repository"
+                    leftIcon={<GitRepo />}
+                />
+            </FormGroup>
         </div>
     );
 };

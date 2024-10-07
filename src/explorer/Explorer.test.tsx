@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import { act, cleanup, waitFor } from '@testing-library/react';
 import React from 'react';
@@ -29,6 +29,7 @@ const testFile: FileMetadata = {
     path: 'test.file',
     sha256: '',
     viewState: null,
+    isVersionControlled: false,
 };
 
 describe('archive button', () => {

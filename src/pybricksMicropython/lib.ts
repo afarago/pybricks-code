@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import { parse, walk } from '@pybricks/python-program-analysis';
 import type { FileContents, FileStorageDb } from '../fileStorage';
@@ -64,7 +64,7 @@ export function validateFileName(
         return FileNameValidationResult.HasInvalidFirstCharacter;
     }
 
-    if (!fileName.match(/^[a-zA-Z0-9_]+$/)) {
+    if (!fileName.match(/^[a-zA-Z0-9_|]+$/)) {
         return FileNameValidationResult.HasInvalidCharacters;
     }
 

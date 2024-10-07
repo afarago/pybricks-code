@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 // A file explorer control.
 
@@ -18,6 +18,7 @@ import {
     Duplicate,
     Edit,
     Export,
+    GitMerge,
     Import,
     Plus,
     Trash,
@@ -58,6 +59,8 @@ import {
     explorerDeleteFile,
     explorerDuplicateFile,
     explorerExportFile,
+    explorerGistExportFile,
+    explorerGithubSyncAllFiles,
     explorerImportFiles,
     explorerRenameFile,
     explorerUserActivateFile,
@@ -169,6 +172,12 @@ const FileActionButtonGroup: React.FunctionComponent<ActionButtonGroupProps> = (
                 />
                 <ActionButton
                     id={deleteButtonId}
+                    icon={<GitMerge />}
+                    tooltip={i18n.translate('treeItem.gistExportTooltip', { fileName })}
+                    onClick={() => dispatch(explorerGistExportFile(fileName))}
+                />
+                <ActionButton
+                    id={deleteButtonId}
                     icon={<Trash />}
                     tooltip={i18n.translate('treeItem.deleteTooltip', { fileName })}
                     onClick={() =>
@@ -183,6 +192,7 @@ const FileActionButtonGroup: React.FunctionComponent<ActionButtonGroupProps> = (
 // matches ID in tour component
 const archiveButtonId = 'pb-explorer-archive-button';
 const newButtonId = 'pb-explorer-add-button';
+const syncGithubButtonId = 'pb-github-sync-button';
 
 const Header: React.FunctionComponent = () => {
     const exportButtonId = useId();
@@ -201,6 +211,12 @@ const Header: React.FunctionComponent = () => {
                     icon={<Archive />}
                     tooltip={i18n.translate('header.toolbar.exportAll')}
                     onClick={() => dispatch(explorerArchiveAllFiles())}
+                />
+                <ActionButton
+                    id={syncGithubButtonId}
+                    icon={<GitMerge />}
+                    tooltip={i18n.translate('header.toolbar.githubSync')}
+                    onClick={() => dispatch(explorerGithubSyncAllFiles())}
                 />
                 <ActionButton
                     id={exportButtonId}
@@ -365,6 +381,7 @@ const TreeContainer: React.FunctionComponent<RenderProps<'renderTreeContainer'>>
 const FileTree: React.FunctionComponent = () => {
     const [focusedItem, setFocusedItem] = useState<TreeItemIndex>();
     const files = useFileStorageMetadata();
+    console.log('>>>>', files);
     const liveDescriptors = useLiveDescriptors();
 
     const rootItemIndex = 'root';
@@ -373,6 +390,7 @@ const FileTree: React.FunctionComponent = () => {
         if (files === undefined) {
             return {};
         }
+        console.warn(files);
 
         return files.reduce<Record<TreeItemIndex, FileTreeItem>>(
             (obj, file) => {
@@ -382,7 +400,11 @@ const FileTree: React.FunctionComponent = () => {
                     index,
                     data: {
                         fileName: file.path,
-                        icon: <Document className={Classes.TREE_NODE_ICON} />,
+                        icon: file.isVersionControlled ? (
+                            <GitMerge className={Classes.TREE_NODE_ICON} />
+                        ) : (
+                            <Document className={Classes.TREE_NODE_ICON} />
+                        ),
                         secondaryLabel: (
                             <TreeItemContext.Consumer>
                                 {(item) => <FileActionButtonGroup item={item} />}

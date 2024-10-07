@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import * as browserFsAccess from 'browser-fs-access';
 import { FileWithHandle } from 'browser-fs-access';
@@ -236,7 +236,7 @@ describe('handleExplorerImportFiles', () => {
         saga.put(explorerImportFiles());
 
         await expect(saga.take()).resolves.toEqual(
-            fileStorageWriteFile(testFileName, testFileContents),
+            fileStorageWriteFile(testFileName, testFileContents, false),
         );
 
         saga.put(fileStorageDidWriteFile(testFileName, uuid(0)));
@@ -286,7 +286,7 @@ describe('handleExplorerImportFiles', () => {
         saga.put(renameImportDialogDidAccept(testFileName, renamedFileName));
 
         await expect(saga.take()).resolves.toEqual(
-            fileStorageWriteFile(renamedFileName, testFileContents),
+            fileStorageWriteFile(renamedFileName, testFileContents, false),
         );
 
         saga.put(fileStorageDidWriteFile(renamedFileName, uuid(0)));
@@ -315,12 +315,14 @@ describe('handleExplorerImportFiles', () => {
                             path: testFileName1,
                             sha256: '',
                             viewState: null,
+                            isVersionControlled: false,
                         },
                         {
                             uuid: testFileUuid2,
                             path: testFileName2,
                             sha256: '',
                             viewState: null,
+                            isVersionControlled: false,
                         },
                     ),
                 });
@@ -344,7 +346,7 @@ describe('handleExplorerImportFiles', () => {
                 );
 
                 await expect(saga.take()).resolves.toEqual(
-                    fileStorageWriteFile(testFileName1, testFileContents1),
+                    fileStorageWriteFile(testFileName1, testFileContents1, false),
                 );
 
                 saga.put(fileStorageDidWriteFile(testFileName1, testFileUuid1));
@@ -363,7 +365,7 @@ describe('handleExplorerImportFiles', () => {
                 }
 
                 await expect(saga.take()).resolves.toEqual(
-                    fileStorageWriteFile(testFileName2, testFileContents2),
+                    fileStorageWriteFile(testFileName2, testFileContents2, false),
                 );
 
                 saga.put(fileStorageDidWriteFile(testFileName2, testFileUuid2));
@@ -392,12 +394,14 @@ describe('handleExplorerImportFiles', () => {
                             path: testFileName1,
                             sha256: '',
                             viewState: null,
+                            isVersionControlled: false,
                         },
                         {
                             uuid: testFileUuid2,
                             path: testFileName2,
                             sha256: '',
                             viewState: null,
+                            isVersionControlled: false,
                         },
                     ),
                 });
@@ -430,7 +434,7 @@ describe('handleExplorerImportFiles', () => {
                 saga.put(renameImportDialogDidAccept(testFileName1, renamedFileName1));
 
                 await expect(saga.take()).resolves.toEqual(
-                    fileStorageWriteFile(renamedFileName1, testFileContents1),
+                    fileStorageWriteFile(renamedFileName1, testFileContents1, false),
                 );
 
                 saga.put(fileStorageDidWriteFile(renamedFileName1, renamedFileUuid1));
@@ -458,7 +462,7 @@ describe('handleExplorerImportFiles', () => {
                 saga.put(renameImportDialogDidAccept(testFileName2, renamedFileName2));
 
                 await expect(saga.take()).resolves.toEqual(
-                    fileStorageWriteFile(renamedFileName2, testFileContents2),
+                    fileStorageWriteFile(renamedFileName2, testFileContents2, false),
                 );
 
                 saga.put(fileStorageDidWriteFile(renamedFileName2, renamedFileUuid2));
@@ -487,12 +491,14 @@ describe('handleExplorerImportFiles', () => {
                             path: testFileName1,
                             sha256: '',
                             viewState: null,
+                            isVersionControlled: false,
                         },
                         {
                             uuid: testFileUuid2,
                             path: testFileName2,
                             sha256: '',
                             viewState: null,
+                            isVersionControlled: false,
                         },
                     ),
                 });
@@ -555,7 +561,7 @@ describe('handleExplorerImportFiles', () => {
         saga.put(explorerImportFiles());
 
         await expect(saga.take()).resolves.toEqual(
-            fileStorageWriteFile(testFileName, testFileContents),
+            fileStorageWriteFile(testFileName, testFileContents, false),
         );
 
         saga.put(fileStorageDidWriteFile(testFileName, uuid(0)));

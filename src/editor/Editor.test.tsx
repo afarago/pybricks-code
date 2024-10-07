@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2021-2023 The Pybricks Authors
+// Copyright (c) 2021-2024 The Pybricks Authors
 
 import { Classes } from '@blueprintjs/core';
 import { act, cleanup, waitFor } from '@testing-library/react';
@@ -22,6 +22,7 @@ const testFile: FileMetadata = {
     path: 'test.file',
     sha256: '',
     viewState: null,
+    isVersionControlled: false,
 };
 jest.setTimeout(1000000);
 afterEach(() => {

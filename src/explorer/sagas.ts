@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
+import { read } from 'fs';
+import { Octokit } from '@octokit/core';
 import { fileOpen, fileSave } from 'browser-fs-access';
 import JSZip from 'jszip';
 import {
@@ -53,6 +55,8 @@ import {
     validateFileName,
 } from '../pybricksMicropython/lib';
 import { RootState } from '../reducers';
+//import { settingsDidGetGithubAuth, settingsGetGithubAuth } from '../settings/actions';
+//import { useSettingGithubAuth, useSettingGithubGist } from '../settings/hooks';
 import { defined, ensureError, timestamp } from '../utils';
 import {
     explorerArchiveAllFiles,
@@ -63,6 +67,7 @@ import {
     explorerDidDeleteFile,
     explorerDidDuplicateFile,
     explorerDidExportFile,
+    explorerDidFailGistExportFile,
     explorerDidFailToArchiveAllFiles,
     explorerDidFailToCreateNewFile,
     explorerDidFailToDeleteFile,
@@ -70,10 +75,13 @@ import {
     explorerDidFailToExportFile,
     explorerDidFailToImportFiles,
     explorerDidFailToRenameFile,
+    explorerDidGistExportFile,
     explorerDidImportFiles,
     explorerDidRenameFile,
     explorerDuplicateFile,
     explorerExportFile,
+    explorerGistExportFile,
+    explorerGithubSyncAllFiles,
     explorerImportFiles,
     explorerRenameFile,
     explorerUserActivateFile,
@@ -178,6 +186,7 @@ type ImportContext = {
 function* importPythonFile(
     sourceFileName: string,
     sourceFileContents: string,
+    isVersionControlled: boolean,
     context: ImportContext,
 ): Generator {
     const [baseName] = sourceFileName.split(pythonFileExtensionRegex);
@@ -252,7 +261,9 @@ function* importPythonFile(
     if (existingFileInfo && openFileUuids.includes(existingFileInfo.uuid)) {
         yield* put(editorReplaceFile(existingFileInfo.uuid, sourceFileContents));
     } else {
-        yield* put(fileStorageWriteFile(fileName, sourceFileContents));
+        yield* put(
+            fileStorageWriteFile(fileName, sourceFileContents, isVersionControlled),
+        );
 
         const { didFailToWrite } = yield* race({
             didWrite: take(fileStorageDidWriteFile.when((a) => a.path === fileName)),
@@ -298,7 +309,7 @@ function* handleExplorerImportFiles(): Generator {
                     {
                         // getting the text now to catch possible error *before* user interaction
                         const text = yield* call(() => file.text());
-                        yield* importPythonFile(file.name, text, context);
+                        yield* importPythonFile(file.name, text, false, context);
                     }
                     break;
                 case zipFileMimeType:
@@ -318,7 +329,7 @@ function* handleExplorerImportFiles(): Generator {
 
                         for (const zipFile of zipFiles) {
                             const text = yield* call(() => zipFile.async('text'));
-                            yield* importPythonFile(zipFile.name, text, context);
+                            yield* importPythonFile(zipFile.name, text, false, context);
                         }
                     }
                     break;
@@ -356,6 +367,7 @@ function* handleExplorerCreateNewFile(): Generator {
             fileStorageWriteFile(
                 fileName,
                 getPybricksMicroPythonFileTemplate(didAccept.hubType) || '',
+                false,
             ),
         );
 
@@ -459,6 +471,163 @@ function* handleExplorerDuplicateFile(
         yield* put(explorerDidDuplicateFile(action.fileName));
     } catch (err) {
         yield* put(explorerDidFailToDuplicateFile(action.fileName, ensureError(err)));
+    }
+}
+
+function* handleExplorerGithubSyncAllFiles(): Generator {
+    try {
+        console.log('handleExplorerGithubSyncAllFiles', 0);
+        //--
+        const settingGithubAuth = JSON.parse(
+            localStorage.getItem('setting.githubAuth') || '',
+        );
+        const settingGithubGist = JSON.parse(
+            localStorage.getItem('setting.githubGist') || '',
+        );
+        const octokit = new Octokit({
+            auth: settingGithubAuth,
+        });
+        const gist_id = settingGithubGist;
+        // console.warn(settingGithubAuth, settingGithubGist, `GET /gists/${gist_id}`);
+        //--
+
+        // read file list from gist
+        const response: any = yield octokit.request(`GET /gists/${gist_id}`);
+        console.log(response);
+        console.log('handleExplorerGithubSyncAllFiles', 1);
+
+        // import files one by one
+        const context: ImportContext = {};
+        for (const key in response?.data?.files) {
+            const elem = response?.data?.files[key];
+            const filename = elem?.filename;
+
+            console.log('import', filename, 0);
+            // console.log(file.content);
+
+            // filename = 'gh|' + filename;
+
+            yield* importPythonFile(filename, elem?.content, true, context);
+            console.log('import', filename, 1);
+        }
+
+        // yield* put(fileStorageDumpAllFiles());
+        // const { didDump, didFailToDump } = yield* race({
+        //     didDump: take(fileStorageDidDumpAllFiles),
+        //     didFailToDump: take(fileStorageDidFailToDumpAllFiles),
+        // });
+        // if (didFailToDump) {
+        //     throw didFailToDump.error;
+        // }
+        // defined(didDump);
+        // if (didDump.files.length === 0) {
+        //     throw new ExplorerError('NoFiles', 'no files in storage');
+        // }
+        // const zip = new JSZip();
+        // for (const f of didDump.files) {
+        //     yield* call(() => zip.file(f.path, f.contents));
+        // }
+        // const zipData = yield* call(() => zip.generateAsync({ type: 'blob' }));
+        // const fileName = `pybricks-backup-${timestamp()}${zipFileExtension}`;
+        // yield* call(() =>
+        //     fileSave(zipData, {
+        //         id: 'pybricksCodeFileStorageArchive',
+        //         fileName,
+        //         extensions: [zipFileExtension],
+        //         mimeTypes: [zipFileMimeType],
+        //         // TODO: translate description
+        //         description: 'Zip Files',
+        //     }),
+        // );
+        // yield* put(explorerDidArchiveAllFiles());
+    } catch (err) {
+        // const error = ensureError(err);
+        // if (error instanceof DOMException && error.name === 'AbortError') {
+        //     // user canceled, don't show error message
+        // } else if (error instanceof ExplorerError && error.name === 'NoFiles') {
+        //     yield* put(alertsShowAlert('explorer', 'noFilesToBackup'));
+        // } else {
+        //     yield* put(
+        //         alertsShowAlert('alerts', 'unexpectedError', {
+        //             error,
+        //         }),
+        //     );
+        // }
+        // yield* put(explorerDidFailToArchiveAllFiles(error));
+    }
+}
+
+function* handleExplorerGistExportFile(
+    action: ReturnType<typeof explorerGistExportFile>,
+): Generator {
+    try {
+        //----
+        let remote_filename = action.fileName;
+        if (remote_filename.startsWith('gh|')) {
+            remote_filename = remote_filename.replace('gh|', '');
+        }
+        yield* put(fileStorageReadFile(action.fileName));
+
+        const { didRead, didFailToRead } = yield* race({
+            didRead: take(
+                fileStorageDidReadFile.when((a) => a.path === action.fileName),
+            ),
+            didFailToRead: take(
+                fileStorageDidFailToReadFile.when((a) => a.path === action.fileName),
+            ),
+        });
+
+        //!!yield* put(alertsShowAlert('explorer', 'noPyFiles'));
+
+        if (didFailToRead) {
+            throw didFailToRead.error;
+        }
+
+        defined(didRead);
+
+        //!! const blob = new Blob([didRead.contents], { type: `${pythonFileMimeType}` });
+
+        //--
+        const settingGithubAuth = JSON.parse(
+            localStorage.getItem('setting.githubAuth') || '',
+        );
+        const settingGithubGist = JSON.parse(
+            localStorage.getItem('setting.githubGist') || '',
+        );
+        const octokit = new Octokit({
+            auth: settingGithubAuth,
+        });
+        const gist_id = settingGithubGist;
+        // console.warn(settingGithubAuth, settingGithubGist, `GET /gists/${gist_id}`);
+        //--
+
+        // read from gist
+        const contents: any = yield octokit.request(`GET /gists/${gist_id}`);
+        console.log(contents);
+
+        const original_content = contents?.data?.files?.[action.fileName]?.content;
+        if (original_content === null || original_content !== didRead.contents) {
+            console.log(original_content);
+            console.log(didRead.contents);
+        } else {
+            console.log('no change');
+            // throw new DOMException('no change');
+            return;
+        }
+
+        // write
+        const payload: any = {
+            gist_id: gist_id,
+            headers: { 'X-GitHub-Api-Version': '2022-11-28' },
+            files: {},
+        };
+        payload.files[remote_filename] = { content: didRead.contents };
+        yield octokit.request(`PATCH /gists/${gist_id}`, payload);
+
+        yield* put(explorerDidGistExportFile(action.fileName));
+    } catch (err) {
+        console.warn(err);
+        yield* put(explorerDidFailGistExportFile(action.fileName, ensureError(err)));
     }
 }
 
@@ -592,4 +761,6 @@ export default function* (): Generator {
     yield* takeEvery(explorerDuplicateFile, handleExplorerDuplicateFile);
     yield* takeEvery(explorerExportFile, handleExplorerExportFile);
     yield* takeEvery(explorerDeleteFile, handleExplorerDeleteFile);
+    yield* takeEvery(explorerGithubSyncAllFiles, handleExplorerGithubSyncAllFiles);
+    yield* takeEvery(explorerGistExportFile, handleExplorerGistExportFile);
 }

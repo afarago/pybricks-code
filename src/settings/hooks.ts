@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import { useCallback, useEffect } from 'react';
 import { useEffectOnce, useLocalStorage, useSessionStorage } from 'usehooks-ts';
@@ -34,5 +34,35 @@ export function useSettingIsShowDocsEnabled(): {
         isSettingShowDocsEnabled,
         setIsSettingShowDocsEnabled,
         toggleIsSettingShowDocsEnabled,
+    };
+}
+
+export function useSettingGithubAuth(): {
+    settingGithubAuth: string;
+    setSettingGithubAuth: (value: string) => void;
+} {
+    const [settingGithubAuth, setSettingGithubAuth] = useLocalStorage(
+        'setting.githubAuth',
+        '',
+    );
+
+    return {
+        settingGithubAuth,
+        setSettingGithubAuth,
+    };
+}
+
+export function useSettingGithubGist(): {
+    settingGithubGist: string;
+    setSettingGithubGist: (value: string) => void;
+} {
+    const [settingGithubGist, setSettingGithubGist] = useLocalStorage(
+        'setting.githubGist',
+        '',
+    );
+
+    return {
+        settingGithubGist,
+        setSettingGithubGist,
     };
 }

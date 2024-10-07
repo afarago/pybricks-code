@@ -3,6 +3,7 @@
         "toolbar": {
             "title": "File Actions",
             "exportAll": "Backup all files",
+            "githubSync": "Syncronize with Github",
             "import": "Import a file",
             "addNew": "Create a new file"
         }
@@ -28,6 +29,7 @@
         "renameTooltip": "Rename {fileName}",
         "duplicateTooltip": "Duplicate {fileName}",
         "exportTooltip": "Export {fileName}",
-        "deleteTooltip": "Delete {fileName}"
+        "deleteTooltip": "Delete {fileName}",
+        "gistExportTooltip": "Gist {fileName}"
     }
 }
