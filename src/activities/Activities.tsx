@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2022-2023 The Pybricks Authors
+// Copyright (c) 2022-2024 The Pybricks Authors
 
 import './activities.scss';
 import { Icon, Tab, Tabs } from '@blueprintjs/core';
-import { Cog, Document } from '@blueprintjs/icons';
+import { Cog, Document, GitRepo } from '@blueprintjs/icons';
 import React, { useCallback, useEffect, useRef } from 'react';
 import Explorer from '../explorer/Explorer';
+import Git from '../git/Git';
 import Settings from '../settings/Settings';
 import { Activity, useActivitiesSelectedActivity } from './hooks';
 import { useI18n } from './i18n';
@@ -134,6 +135,21 @@ const Activities: React.FunctionComponent = () => {
                     />
                 }
                 panel={<Settings />}
+                panelClassName="pb-activities-tabview"
+                onMouseDown={(e) => e.stopPropagation()}
+            />
+            <Tab
+                itemID="pb-activities-settings-tab1"
+                aria-label={i18n.translate('settings')}
+                className="pb-activities-tablist-tab"
+                id={Activity.Misc}
+                title={
+                    <Icon
+                        htmlTitle={i18n.translate('git')}
+                        icon={<GitRepo size={35} />}
+                    />
+                }
+                panel={<Git />}
                 panelClassName="pb-activities-tabview"
                 onMouseDown={(e) => e.stopPropagation()}
             />
