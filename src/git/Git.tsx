@@ -40,6 +40,20 @@ const Git: React.FunctionComponent = () => {
         });
         console.log(response);
         console.log('handleExplorerGithubSyncAllFiles', 1);
+
+        // ,....
+        /*
+        0. create repo
+        0a. get commit tree / base
+        ----
+        * list files
+        * check any conflicts / store with each file last update?
+        ----
+        1. Create blob
+        2. Create tree 
+        3. Create a Commit
+        4. Update Reference
+        */
     }
 
     return (
