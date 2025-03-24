@@ -8,7 +8,7 @@ export const firmwareInstallPybricksDialogShow = createAction(() => ({
     type: 'firmware.installPybricksDialog.action.show',
 }));
 
-type FlashMethod = 'ble-lwp3-bootloader' | 'usb-lego-dfu';
+type FlashMethod = 'ble-lwp3-bootloader' | 'usb-lego-dfu' | 'usb-lego-ev3';
 
 /**
  * Action that indicates the user accepted the install Pybricks firmware dialog.

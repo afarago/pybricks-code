@@ -325,7 +325,8 @@ type HubLabel =
     | 'technichub'
     | 'inventorhub'
     | 'primehub'
-    | 'essentialhub';
+    | 'essentialhub'
+    | 'ev3';
 
 const templateSnippets: Array<
     Required<

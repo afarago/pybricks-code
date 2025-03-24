@@ -385,6 +385,33 @@ export const firmwareDidFailToFlashUsbDfu = createAction(() => ({
     type: 'firmware.action.didFailToFlashUsbDfu',
 }));
 
+/**
+ * Low-level action to flash firmware using LEGO's HID over USB.
+ * @param firmware The firmware binary blob.
+ * @param hubType The hub type the firmware blob is for.
+ */
+export const firmwareFlashUsbHid = createAction(
+    (firmware: ArrayBuffer, hubType: HubType) => ({
+        type: 'firmware.action.flashUsbHid',
+        firmware,
+        hubType,
+    }),
+);
+
+/**
+ * Low-level action that indicates {@link firmwareFlashUsbHid} succeeded.
+ */
+export const firmwareDidFlashUsbHid = createAction(() => ({
+    type: 'firmware.action.didFlashUsbHid',
+}));
+
+/**
+ * Low-level action that indicates {@link firmwareFlashUsbHid} failed.
+ */
+export const firmwareDidFailToFlashUsbHid = createAction(() => ({
+    type: 'firmware.action.didFailToFlashUsbHid',
+}));
+
 // High-level actions
 
 /**

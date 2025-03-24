@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2020-2024 The Pybricks Authors
+// Copyright (c) 2020-2025 The Pybricks Authors
 
 import {
     FirmwareReader,
@@ -8,6 +8,8 @@ import {
     encodeHubName,
     metadataIsV100,
     metadataIsV110,
+    metadataIsV200,
+    metadataIsV210,
 } from '@pybricks/firmware';
 import cityHubZip from '@pybricks/firmware/build/cityhub.zip';
 import moveHubZip from '@pybricks/firmware/build/movehub.zip';
@@ -72,10 +74,12 @@ import {
     didProgress,
     didStart,
     firmwareDidFailToFlashUsbDfu,
+    firmwareDidFailToFlashUsbHid,
     firmwareDidFailToRestoreOfficialDfu,
     firmwareDidFlashUsbDfu,
     firmwareDidRestoreOfficialDfu,
     firmwareFlashUsbDfu,
+    firmwareFlashUsbHid,
     firmwareInstallPybricks,
     firmwareRestoreOfficialDfu,
     flashFirmware,
@@ -198,7 +202,7 @@ function* firmwareIterator(data: DataView, maxSize: number): Generator<number> {
 function* loadFirmware(
     data: ArrayBuffer,
     hubName: string,
-): SagaGenerator<{ firmware: Uint8Array; deviceId: HubType }> {
+): SagaGenerator<{ firmware: Uint8Array | undefined; deviceId: HubType | undefined }> {
     const [reader, readerErr] = yield* call(() => maybe(FirmwareReader.load(data)));
 
     if (readerErr) {
@@ -331,49 +335,56 @@ function* loadFirmware(
         firmwareView.setUint32(checksumOffset, checksum, true);
 
         return { firmware, deviceId: metadata['device-id'] };
-    }
+    } else if (metadataIsV200(metadata) || metadataIsV210(metadata)) {
+        const firmware = new Uint8Array(firmwareBase.length + 4);
+        const firmwareView = new DataView(firmware.buffer);
 
-    const firmware = new Uint8Array(firmwareBase.length + 4);
-    const firmwareView = new DataView(firmware.buffer);
+        firmware.set(firmwareBase);
 
-    firmware.set(firmwareBase);
-
-    // empty string means use default name (don't write over firmware)
-    if (hubName) {
-        firmware.set(encodeHubName(hubName, metadata), metadata['hub-name-offset']);
-    }
-
-    const checksum = (function () {
-        switch (metadata['checksum-type']) {
-            case 'sum':
-                return sumComplement32(
-                    firmwareIterator(firmwareView, metadata['checksum-size']),
-                );
-            case 'crc32':
-                return crc32(firmwareIterator(firmwareView, metadata['checksum-size']));
-            default:
-                return undefined;
+        // empty string means use default name (don't write over firmware)
+        if (hubName) {
+            firmware.set(encodeHubName(hubName, metadata), metadata['hub-name-offset']);
         }
-    })();
 
-    if (checksum === undefined) {
-        // FIXME: we should return error/throw instead
-        yield* put(
-            didFailToFinish(
-                FailToFinishReasonType.BadMetadata,
-                'checksum-type',
-                MetadataProblem.NotSupported,
-            ),
-        );
-        yield* disconnectAndCancel();
+        const checksum = (function () {
+            switch (metadata['checksum-type']) {
+                case 'sum':
+                    return sumComplement32(
+                        firmwareIterator(firmwareView, metadata['checksum-size']),
+                    );
+                case 'crc32':
+                    return crc32(
+                        firmwareIterator(firmwareView, metadata['checksum-size']),
+                    );
+                case 'none':
+                    return 0;
+                default:
+                    return undefined;
+            }
+        })();
 
-        // istanbul ignore next: needed for typescript flow
-        throw new Error('unreachable');
+        if (checksum === undefined) {
+            // FIXME: we should return error/throw instead
+            yield* put(
+                didFailToFinish(
+                    FailToFinishReasonType.BadMetadata,
+                    'checksum-type',
+                    MetadataProblem.NotSupported,
+                ),
+            );
+            yield* disconnectAndCancel();
+
+            // istanbul ignore next: needed for typescript flow
+            throw new Error('unreachable');
+        }
+
+        firmwareView.setUint32(firmwareBase.length, checksum, true);
+
+        return { firmware, deviceId: metadata['device-id'] };
+    } else {
+        yield* put(didFailToFinish(FailToFinishReasonType.Unknown, readerErr));
+        return { firmware: undefined, deviceId: undefined };
     }
-
-    firmwareView.setUint32(firmwareBase.length, checksum, true);
-
-    return { firmware, deviceId: metadata['device-id'] };
 }
 
 /**
@@ -435,6 +446,12 @@ function* handleFlashFirmware(action: ReturnType<typeof flashFirmware>): Generat
 
             const data = yield* call(() => response.arrayBuffer());
             ({ firmware, deviceId } = yield* loadFirmware(data, action.hubName));
+
+            if (deviceId === undefined || firmware === undefined) {
+                yield* put(didFailToFinish(FailToFinishReasonType.Unknown));
+                yield* disconnectAndCancel();
+                return;
+            }
 
             if (deviceId !== undefined && info.hubType !== deviceId) {
                 yield* put(didFailToFinish(FailToFinishReasonType.DeviceMismatch));
@@ -680,6 +697,13 @@ function getUsbDeviceFiltersForHub(hubType: HubType): USBDeviceFilter[] {
                     productId: LegoUsbProductId.SpikeEssentialBootloader,
                 },
             ];
+        case HubType.EV3:
+            return [
+                {
+                    vendorId: legoUsbVendorId,
+                    productId: LegoUsbProductId.Ev3Bootloader,
+                },
+            ];
         default:
             throw new Error(`unsupported hub type: ${hubType}`);
     }
@@ -874,6 +898,197 @@ function* handleFlashUsbDfu(action: ReturnType<typeof firmwareFlashUsbDfu>): Gen
     }
 }
 
+function* handleFlashUsbHid(action: ReturnType<typeof firmwareFlashUsbHid>): Generator {
+    const defer = new Array<() => void>();
+    //!!!
+
+    try {
+        // not all web browsers support Web USB
+        if (!navigator.usb) {
+            yield* put(alertsShowAlert('firmware', 'noWebUsb'));
+            yield* put(firmwareDidFailToFlashUsbDfu());
+            return;
+        }
+
+        const device = yield* call(() =>
+            navigator.usb
+                .requestDevice({
+                    filters: getUsbDeviceFiltersForHub(action.hubType),
+                })
+                .catch((err) => {
+                    if (err instanceof DOMException && err.name === 'NotFoundError') {
+                        // user clicked cancel button
+                        return undefined;
+                    }
+
+                    throw err;
+                }),
+        );
+
+        if (!device) {
+            yield* put(alertsShowAlert('firmware', 'noDfuHub'));
+            yield* put(firmwareDidFailToFlashUsbHid());
+
+            const { action } = yield* take<
+                ReturnType<typeof alertsDidShowAlert<'firmware', 'noDfuHub'>>
+            >(
+                alertsDidShowAlert.when(
+                    (a) => a.domain === 'firmware' && a.specific === 'noDfuHub',
+                ),
+            );
+
+            if (action === 'installWindowsDriver') {
+                yield* put(firmwareDfuWindowsDriverInstallDialogDialogShow());
+            }
+
+            return;
+        }
+
+        //!! todo create WebHidDGU
+        const dfu = new WebDFU(
+            device,
+            // forceInterfacesName is needed to get the flash layout map
+            { forceInterfacesName: true },
+            {
+                // NB: info and progress are never called in dfu v0.1.5
+                info: console.debug,
+                warning: console.warn,
+                progress: console.debug,
+            },
+        );
+
+        yield* call(() => dfu.init());
+
+        // we want the interface with alt=0
+        const ifaceIndex = dfu.interfaces.findIndex(
+            (i) => i.alternate.alternateSetting === 0,
+        );
+
+        if (ifaceIndex === -1) {
+            yield* put(alertsShowAlert('firmware', 'noDfuInterface')); //TODO: noHidInterface
+            yield* put(firmwareDidFailToFlashUsbHid());
+            return;
+        }
+
+        yield* call(() => dfu.connect(ifaceIndex));
+
+        defer.push(() =>
+            dfu.close().catch((err) => {
+                if (err instanceof DOMException && err.name === 'NetworkError') {
+                    // device was disconnected
+                    return;
+                }
+
+                // not expected
+                console.error(err);
+            }),
+        );
+
+        dfu.dfuseStartAddress = dfuFirmwareStartAddress;
+        const writeProc = dfu.write(1024, action.firmware, true);
+
+        const eraseProcessChan = eventChannel<{
+            bytesSent: number;
+            expectedSize: number;
+        }>((emit) => {
+            return writeProc.events.on('erase/process', (bytesSent, expectedSize) =>
+                emit({ bytesSent, expectedSize }),
+            );
+        });
+
+        defer.push(() => eraseProcessChan.close());
+
+        yield* takeEvery(eraseProcessChan, handleDfuEraseProcess);
+
+        const writeProcessChan = eventChannel<{
+            bytesSent: number;
+            expectedSize: number;
+        }>((emit) => {
+            return writeProc.events.on('write/process', (bytesSent, expectedSize) =>
+                emit({ bytesSent, expectedSize }),
+            );
+        });
+
+        defer.push(() => writeProcessChan.close());
+
+        yield* takeEvery(writeProcessChan, handleDfuWriteProcess);
+
+        const endChan = eventChannel<boolean>((emit) => {
+            // can't emit null or undefined, so have to emit something
+            return writeProc.events.on('end', () => emit(true));
+        });
+
+        defer.push(() => endChan.close());
+
+        const errorChan = eventChannel((emit) => {
+            return writeProc.events.on('error', emit);
+        });
+
+        defer.push(() => errorChan.close());
+
+        const { error } = yield* (function* () {
+            // HACK: Somehow an error during the write phase can cause the
+            // race generator to throw instead of returning the error.
+            // So we catch the error and return it as if errorChan won the
+            // race.
+            try {
+                return yield* race({
+                    end: take(endChan),
+                    error: take(errorChan),
+                });
+            } catch (err) {
+                return { error: err };
+            }
+        })();
+
+        // errors can happen, e.g. if the USB cable is disconnected while
+        // flashing the firmware
+        if (error) {
+            // istanbul ignore if
+            if (process.env.NODE_ENV !== 'test') {
+                console.error(error);
+            }
+
+            yield* put(alertsHideAlert(firmwareDfuProgressToastId));
+            yield* put(firmwareDidFailToFlashUsbDfu());
+
+            yield* put(alertsShowAlert('firmware', 'dfuError'));
+
+            const { action: alertAction } = yield* take<
+                ReturnType<typeof alertsDidShowAlert<'firmware', 'dfuError'>>
+            >(
+                alertsDidShowAlert.when(
+                    (a) => a.domain === 'firmware' && a.specific === 'dfuError',
+                ),
+            );
+
+            if (alertAction === 'tryAgain') {
+                // queue the action that triggered this saga to retry
+                yield* put(action);
+            }
+
+            return;
+        }
+
+        yield* put(firmwareDidFlashUsbDfu());
+    } catch (err) {
+        // istanbul ignore if
+        if (process.env.NODE_ENV !== 'test') {
+            console.error(err);
+        }
+
+        yield* put(
+            alertsShowAlert('alerts', 'unexpectedError', { error: ensureError(err) }),
+        );
+
+        yield* put(firmwareDidFailToFlashUsbDfu());
+    } finally {
+        while (defer.length !== 0) {
+            defer.pop()?.();
+        }
+    }
+}
+
 function* handleInstallPybricks(): Generator {
     yield* put(firmwareInstallPybricksDialogShow());
     const { accepted, canceled } = yield* race({
@@ -898,7 +1113,44 @@ function* handleInstallPybricks(): Generator {
                     accepted.hubName,
                 );
 
-                yield* put(firmwareFlashUsbDfu(firmware, deviceId));
+                if (deviceId === undefined || firmware === undefined) {
+                    yield* put(didFailToFinish(FailToFinishReasonType.Unknown));
+                    yield* disconnectAndCancel();
+                    return;
+                }
+
+                yield* put(
+                    firmwareFlashUsbDfu(firmware.buffer as ArrayBuffer, deviceId),
+                );
+            } catch (err) {
+                // istanbul ignore if
+                if (process.env.NODE_ENV !== 'test') {
+                    console.error(err);
+                }
+
+                yield* put(
+                    alertsShowAlert('alerts', 'unexpectedError', {
+                        error: ensureError(err),
+                    }),
+                );
+            }
+            break;
+        case 'usb-lego-ev3':
+            try {
+                const { firmware, deviceId } = yield* loadFirmware(
+                    accepted.firmwareZip,
+                    accepted.hubName,
+                );
+
+                if (deviceId === undefined || firmware === undefined) {
+                    yield* put(didFailToFinish(FailToFinishReasonType.Unknown));
+                    yield* disconnectAndCancel();
+                    return;
+                }
+
+                yield* put(
+                    firmwareFlashUsbHid(firmware.buffer as ArrayBuffer, deviceId),
+                );
             } catch (err) {
                 // istanbul ignore if
                 if (process.env.NODE_ENV !== 'test') {
@@ -925,6 +1177,9 @@ function getUrlForHubType(hub: Hub): URL {
                 './assets/essential-v1.0.00.0071-191f3ad.bin',
                 import.meta.url,
             );
+        case Hub.EV3:
+            //return new URL('./assets/ev3-v1.10.00.0000-0b6b3b4.bin', import.meta.url);
+            throw new Error('EV3 official HID not supported yet'); //TODO: add ev3 default firmware
         default:
             throw new Error(`unsupported hub: ${hub}`);
     }
@@ -937,6 +1192,8 @@ function getHubTypeForHub(hub: Hub): HubType {
             return HubType.PrimeHub;
         case Hub.Essential:
             return HubType.EssentialHub;
+        case Hub.EV3:
+            return HubType.EV3;
         default:
             throw new Error(`unsupported hub: ${hub}`);
     }
@@ -991,6 +1248,7 @@ function* handleRestoreOfficialDfu(
 export default function* (): Generator {
     yield* takeEvery(flashFirmware, handleFlashFirmware);
     yield* takeEvery(firmwareFlashUsbDfu, handleFlashUsbDfu);
+    yield* takeEvery(firmwareFlashUsbHid, handleFlashUsbHid);
     yield* takeEvery(firmwareInstallPybricks, handleInstallPybricks);
     yield* takeEvery(firmwareRestoreOfficialDfu, handleRestoreOfficialDfu);
 }

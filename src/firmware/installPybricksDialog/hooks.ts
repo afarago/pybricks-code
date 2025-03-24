@@ -14,6 +14,7 @@ import { useIsMounted } from 'usehooks-ts';
 import { alertsShowAlert } from '../../alerts/actions';
 import { Hub } from '../../components/hubPicker';
 import { ensureError } from '../../utils';
+import ev3HubZip from './firmware/ev3hub.zip';
 import { validateMetadata } from './';
 
 export type FirmwareData = {
@@ -44,6 +45,7 @@ const firmwareZipMap = new Map<Hub, string>([
     [Hub.Prime, primeHubZip],
     [Hub.Essential, essentialHubZip],
     [Hub.Inventor, primeHubZip],
+    [Hub.EV3, ev3HubZip],
 ]);
 
 /**

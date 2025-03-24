@@ -15,6 +15,7 @@ export enum Hub {
     Prime = 'primehub',
     /** SPIKE Essential hub */
     Essential = 'essentialhub',
+    EV3 = 'ev3',
 }
 
 /**
@@ -69,5 +70,7 @@ export function hubBootloaderType(hub: Hub) {
         case Hub.City:
         case Hub.Technic:
             return 'ble-lwp3-bootloader';
+        case Hub.EV3:
+            return 'usb-lego-ev3';
     }
 }

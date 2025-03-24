@@ -66,6 +66,12 @@ export const HubPicker: React.FunctionComponent<HubPickerProps> = ({ disabled })
                     label="MINDSTORMS Robot Inventor Hub"
                 />
             </Radio>
+            <Radio value={Hub.EV3}>
+                <HubIcon
+                    url={new URL('./images/hub-ev3.png', import.meta.url)}
+                    label="EV3 Hub"
+                />
+            </Radio>
         </RadioGroup>
     );
 };
