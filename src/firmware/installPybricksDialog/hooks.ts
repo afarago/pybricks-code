@@ -80,6 +80,7 @@ export function useFirmware(hubType: Hub): State {
     useEffect(() => {
         // Do nothing if the url is not given
         if (!url) {
+            dispatch({ type: 'error', payload: new Error('No URL for this hub type') });
             return;
         }
 

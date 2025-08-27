@@ -2,6 +2,7 @@
 // Copyright (c) 2020-2025 The Pybricks Authors
 
 import {
+    FirmwareMetadataV200,
     FirmwareReader,
     FirmwareReaderError,
     HubType,
@@ -14,7 +15,7 @@ import moveHubZip from '@pybricks/firmware/build/movehub.zip';
 import technicHubZip from '@pybricks/firmware/build/technichub.zip';
 import { WebDFU } from 'dfu';
 import { AnyAction } from 'redux';
-import { eventChannel } from 'redux-saga';
+import { channel, eventChannel } from 'redux-saga';
 import { ActionPattern } from 'redux-saga/effects';
 import {
     SagaGenerator,
@@ -229,6 +230,10 @@ function* loadFirmware(
 
     const firmwareBase = yield* call(() => reader.readFirmwareBase());
     const metadata = yield* call(() => reader.readMetadata());
+    let checksum: number | undefined = undefined;
+    let checksum_size = 4;
+    let firmware: Uint8Array | undefined = undefined;
+    let firmwareView: DataView | undefined = undefined;
 
     // v1.x allows appending main.py to firmware, later versions do not
     if (metadataIsV100(metadata) || metadataIsV110(metadata)) {
@@ -280,8 +285,8 @@ function* loadFirmware(
             mpy.data.length +
             fmod(-mpy.data.length, 4);
 
-        const firmware = new Uint8Array(checksumOffset + 4);
-        const firmwareView = new DataView(firmware.buffer);
+        firmware = new Uint8Array(checksumOffset + 4);
+        firmwareView = new DataView(firmware.buffer);
 
         if (firmware.length > metadata['max-firmware-size']) {
             // FIXME: we should return error/throw instead
@@ -307,7 +312,7 @@ function* loadFirmware(
             }
         }
 
-        const checksum = (function () {
+        checksum = (function () {
             switch (metadata['checksum-type']) {
                 case 'sum':
                     return sumComplement32(
@@ -342,28 +347,41 @@ function* loadFirmware(
         return { firmware, deviceId: metadata['device-id'] };
     }
 
-    const firmware = new Uint8Array(firmwareBase.length + 4);
-    const firmwareView = new DataView(firmware.buffer);
+    // v2.x supports setting the checksum size to 0 to indicate no checksum
+    else {
+        const metadataV2 = metadata as FirmwareMetadataV200;
+        checksum_size = metadataV2['checksum-size'];
 
-    firmware.set(firmwareBase);
+        // TODO: v2.x supports setting checksum size, prior it was a fixed 4 bytes
+        firmware = new Uint8Array(firmwareBase.length + checksum_size);
+        firmwareView = new DataView(firmware.buffer);
+        checksum = (function () {
+            switch (metadata['checksum-type']) {
+                case 'sum':
+                    console.log('computing sum');
+                    return sumComplement32(
+                        firmwareIterator(firmwareView, metadataV2['checksum-size']),
+                    );
+                case 'crc32':
+                    console.log('computing crc32');
+                    return crc32(
+                        firmwareIterator(firmwareView, metadataV2['checksum-size']),
+                    );
+                default:
+                    return 0;
+            }
+        })();
 
-    // empty string means use default name (don't write over firmware)
-    if (hubName) {
-        firmware.set(encodeHubName(hubName, metadata), metadata['hub-name-offset']);
-    }
+        firmware.set(firmwareBase);
 
-    const checksum = (function () {
-        switch (metadata['checksum-type']) {
-            case 'sum':
-                return sumComplement32(
-                    firmwareIterator(firmwareView, metadata['checksum-size']),
-                );
-            case 'crc32':
-                return crc32(firmwareIterator(firmwareView, metadata['checksum-size']));
-            default:
-                return undefined;
+        // empty string means use default name (don't write over firmware)
+        if (hubName) {
+            firmware.set(
+                encodeHubName(hubName, metadata),
+                metadataV2['hub-name-offset'],
+            );
         }
-    })();
+    }
 
     if (checksum === undefined) {
         // FIXME: we should return error/throw instead
@@ -380,7 +398,9 @@ function* loadFirmware(
         throw new Error('unreachable');
     }
 
-    firmwareView.setUint32(firmwareBase.length, checksum, true);
+    if (checksum_size) {
+        firmwareView.setUint32(firmwareBase.length, checksum, true);
+    }
 
     return { firmware, deviceId: metadata['device-id'] };
 }
@@ -922,8 +942,14 @@ function* handleInstallPybricks(): Generator {
             }
             break;
         case 'usb-ev3':
-            // TODO: implement flashing via EV3 USB
-            console.error('Flashing via EV3 USB is not implemented yet');
+            {
+                const { firmware } = yield* loadFirmware(
+                    accepted.firmwareZip,
+                    accepted.hubName,
+                );
+
+                yield* put(firmwareFlashEV3(firmware.buffer as ArrayBuffer));
+            }
             break;
     }
 }
@@ -1105,8 +1131,23 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
         command: number,
         payload?: Uint8Array,
     ): SagaGenerator<[DataView | undefined, Error | undefined]> {
-        console.debug(`EV3 send: command=${command}, payload=${payload}`);
+        // Create a channel that buffers the actions
+        const replyChannel = yield* call(
+            channel<ReturnType<typeof firmwareDidReceiveEV3Reply>>,
+        );
 
+        // Create a task that forwards matching actions to our channel
+        const forwardTask = yield* fork(function* () {
+            while (true) {
+                const action = yield* take(firmwareDidReceiveEV3Reply);
+                if (action.replyCommand === command) {
+                    yield* put(replyChannel, action);
+                    break; // Stop after finding the matching reply
+                }
+            }
+        });
+
+        // Send the command
         const dataBuffer = new Uint8Array((payload?.byteLength ?? 0) + 6);
         const data = new DataView(dataBuffer.buffer);
 
@@ -1121,13 +1162,19 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
         const [, sendError] = yield* call(() => maybe(hidDevice.sendReport(0, data)));
 
         if (sendError) {
+            yield* cancel(forwardTask);
             return [undefined, sendError];
         }
 
         const { reply, timeout } = yield* race({
-            reply: take(firmwareDidReceiveEV3Reply),
-            timeout: delay(5000),
+            reply: take(replyChannel),
+            timeout: delay(15000),
         });
+
+        // Always clean up
+        yield* cancel(forwardTask);
+        yield* call(() => replyChannel.close());
+
         if (timeout) {
             return [undefined, new Error('Timeout waiting for EV3 reply')];
         }

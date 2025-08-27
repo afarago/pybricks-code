@@ -164,6 +164,19 @@ function* handleUsbConnectPybricks(hotPlugDevice?: USBDevice): Generator {
     // REVISIT: For now, we are making the assumption that there is only one
     // configuration and it is already selected and that it contains a Pybricks
     // interface.
+    if (usbDevice.configuration === null && usbDevice.configurations.length > 0) {
+        const [, selectErr] = yield* call(() =>
+            maybe(
+                usbDevice.selectConfiguration(
+                    usbDevice.configurations[0].configurationValue,
+                ),
+            ),
+        );
+
+        // FIXME: Implement error handling here
+        console.error(selectErr);
+    }
+
     assert(
         usbDevice.configuration !== undefined,
         'USB device configuration is undefined',
