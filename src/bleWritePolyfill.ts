@@ -35,5 +35,3 @@ if (typeof (window as any).BluetoothRemoteGATTCharacteristic !== 'undefined') {
 }
 
 export {};
-
-// --- IGNORE ---

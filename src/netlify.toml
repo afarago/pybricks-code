@@ -1,3 +1,0 @@
-[build.environment]
-  NODE_ENV = "development"
-  PKG_CONFIG_PATH = "/opt/buildhome/.pkg-config"
