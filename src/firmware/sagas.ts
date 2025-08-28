@@ -230,10 +230,6 @@ function* loadFirmware(
 
     const firmwareBase = yield* call(() => reader.readFirmwareBase());
     const metadata = yield* call(() => reader.readMetadata());
-    let checksum: number | undefined = undefined;
-    let checksum_size = 4;
-    let firmware: Uint8Array | undefined = undefined;
-    let firmwareView: DataView | undefined = undefined;
 
     // v1.x allows appending main.py to firmware, later versions do not
     if (metadataIsV100(metadata) || metadataIsV110(metadata)) {
@@ -285,8 +281,8 @@ function* loadFirmware(
             mpy.data.length +
             fmod(-mpy.data.length, 4);
 
-        firmware = new Uint8Array(checksumOffset + 4);
-        firmwareView = new DataView(firmware.buffer);
+        const firmware = new Uint8Array(checksumOffset + 4);
+        const firmwareView = new DataView(firmware.buffer);
 
         if (firmware.length > metadata['max-firmware-size']) {
             // FIXME: we should return error/throw instead
@@ -312,7 +308,7 @@ function* loadFirmware(
             }
         }
 
-        checksum = (function () {
+        const checksum = (function () {
             switch (metadata['checksum-type']) {
                 case 'sum':
                     return sumComplement32(
@@ -348,14 +344,14 @@ function* loadFirmware(
     }
 
     // v2.x supports setting the checksum size to 0 to indicate no checksum
-    else {
+    {
         const metadataV2 = metadata as FirmwareMetadataV200;
-        checksum_size = metadataV2['checksum-size'];
+        const checksum_size = metadataV2['checksum-size'];
 
-        // TODO: v2.x supports setting checksum size, prior it was a fixed 4 bytes
-        firmware = new Uint8Array(firmwareBase.length + checksum_size);
-        firmwareView = new DataView(firmware.buffer);
-        checksum = (function () {
+        // TODO: v2.x supports setting checksum size, prior it was a fixed 4 bytes - check if it 4 or checksum_size
+        const firmware = new Uint8Array(firmwareBase.length + 4);
+        const firmwareView = new DataView(firmware.buffer);
+        const checksum = (function () {
             switch (metadata['checksum-type']) {
                 case 'sum':
                     console.log('computing sum');
@@ -381,28 +377,28 @@ function* loadFirmware(
                 metadataV2['hub-name-offset'],
             );
         }
+
+        if (checksum === undefined) {
+            // FIXME: we should return error/throw instead
+            yield* put(
+                didFailToFinish(
+                    FailToFinishReasonType.BadMetadata,
+                    'checksum-type',
+                    MetadataProblem.NotSupported,
+                ),
+            );
+            yield* disconnectAndCancel();
+
+            // istanbul ignore next: needed for typescript flow
+            throw new Error('unreachable');
+        }
+
+        if (checksum_size) {
+            firmwareView.setUint32(firmwareBase.length, checksum, true);
+        }
+
+        return { firmware, deviceId: metadata['device-id'] };
     }
-
-    if (checksum === undefined) {
-        // FIXME: we should return error/throw instead
-        yield* put(
-            didFailToFinish(
-                FailToFinishReasonType.BadMetadata,
-                'checksum-type',
-                MetadataProblem.NotSupported,
-            ),
-        );
-        yield* disconnectAndCancel();
-
-        // istanbul ignore next: needed for typescript flow
-        throw new Error('unreachable');
-    }
-
-    if (checksum_size) {
-        firmwareView.setUint32(firmwareBase.length, checksum, true);
-    }
-
-    return { firmware, deviceId: metadata['device-id'] };
 }
 
 /**
@@ -417,6 +413,7 @@ function* handleFlashFirmware(action: ReturnType<typeof flashFirmware>): Generat
         if (action.data !== null) {
             ({ firmware, deviceId } = yield* loadFirmware(action.data, action.hubName));
         }
+        console.log('>>> deviceId', deviceId, 'firmware', firmware, action.data);
 
         yield* put(connect());
         const connectResult = yield* take([didConnect, didFailToConnect]);
@@ -604,6 +601,7 @@ function* handleFlashFirmware(action: ReturnType<typeof flashFirmware>): Generat
         }
 
         if (flash.checksum !== runningChecksum) {
+            console.error('>>>> checksum', flash.checksum, runningChecksum);
             // istanbul ignore next
             if (process.env.NODE_ENV !== 'test') {
                 console.error(
@@ -941,16 +939,28 @@ function* handleInstallPybricks(): Generator {
                 );
             }
             break;
-        case 'usb-ev3':
-            {
+        case 'usb-ev3': {
+            try {
                 const { firmware } = yield* loadFirmware(
                     accepted.firmwareZip,
                     accepted.hubName,
                 );
 
                 yield* put(firmwareFlashEV3(firmware.buffer as ArrayBuffer));
+            } catch (err) {
+                // istanbul ignore if
+                if (process.env.NODE_ENV !== 'test') {
+                    console.error(err);
+                }
+
+                yield* put(
+                    alertsShowAlert('alerts', 'unexpectedError', {
+                        error: ensureError(err),
+                    }),
+                );
             }
             break;
+        }
     }
 }
 
@@ -1021,7 +1031,9 @@ function* handleRestoreOfficialDfu(
         }
 
         yield* put(
-            alertsShowAlert('alerts', 'unexpectedError', { error: ensureError(err) }),
+            alertsShowAlert('alerts', 'unexpectedError', {
+                error: ensureError(err),
+            }),
         );
         yield* put(firmwareDidFailToRestoreOfficialDfu());
     }
@@ -1137,6 +1149,9 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
         );
 
         // Create a task that forwards matching actions to our channel
+        // Sending the command and setting up the listener are not atomic,
+        // so we might receive the reply before we start listening. To handle
+        // this, we keep listening until we find the matching reply.
         const forwardTask = yield* fork(function* () {
             while (true) {
                 const action = yield* take(firmwareDidReceiveEV3Reply);
@@ -1147,59 +1162,62 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
             }
         });
 
-        // Send the command
-        const dataBuffer = new Uint8Array((payload?.byteLength ?? 0) + 6);
-        const data = new DataView(dataBuffer.buffer);
+        try {
+            // Send the command
+            const dataBuffer = new Uint8Array((payload?.byteLength ?? 0) + 6);
+            const data = new DataView(dataBuffer.buffer);
 
-        data.setInt16(0, (payload?.byteLength ?? 0) + 4, true);
-        data.setInt16(2, 0, true); // TODO: reply number
-        data.setUint8(4, 0x01); // system command w/ reply
-        data.setUint8(5, command);
-        if (payload) {
-            dataBuffer.set(payload, 6);
-        }
+            data.setInt16(0, (payload?.byteLength ?? 0) + 4, true);
+            data.setInt16(2, 0, true); // TODO: reply number
+            data.setUint8(4, 0x01); // system command w/ reply
+            data.setUint8(5, command);
+            if (payload) {
+                dataBuffer.set(payload, 6);
+            }
 
-        const [, sendError] = yield* call(() => maybe(hidDevice.sendReport(0, data)));
+            const [, sendError] = yield* call(() =>
+                maybe(hidDevice.sendReport(0, data)),
+            );
 
-        if (sendError) {
+            if (sendError) {
+                return [undefined, sendError];
+            }
+
+            const { reply, timeout } = yield* race({
+                reply: take(replyChannel),
+                timeout: delay(5000),
+            });
+
+            if (timeout) {
+                return [undefined, new Error('Timeout waiting for EV3 reply')];
+            }
+
+            defined(reply);
+
+            if (reply.replyCommand !== command) {
+                return [
+                    undefined,
+                    new Error(
+                        `EV3 reply command mismatch: expected ${command}, got ${reply.replyCommand}`,
+                    ),
+                ];
+            }
+
+            if (reply.status !== 0) {
+                return [
+                    undefined,
+                    new Error(
+                        `EV3 reply status error: ${reply.status} for command ${command}`,
+                    ),
+                ];
+            }
+
+            return [new DataView(reply.payload), undefined];
+        } finally {
+            // Always clean up
             yield* cancel(forwardTask);
-            return [undefined, sendError];
+            yield* call(() => replyChannel.close());
         }
-
-        const { reply, timeout } = yield* race({
-            reply: take(replyChannel),
-            timeout: delay(15000),
-        });
-
-        // Always clean up
-        yield* cancel(forwardTask);
-        yield* call(() => replyChannel.close());
-
-        if (timeout) {
-            return [undefined, new Error('Timeout waiting for EV3 reply')];
-        }
-
-        defined(reply);
-
-        if (reply.replyCommand !== command) {
-            return [
-                undefined,
-                new Error(
-                    `EV3 reply command mismatch: expected ${command}, got ${reply.replyCommand}`,
-                ),
-            ];
-        }
-
-        if (reply.status !== 0) {
-            return [
-                undefined,
-                new Error(
-                    `EV3 reply status error: ${reply.status} for command ${command}`,
-                ),
-            ];
-        }
-
-        return [new DataView(reply.payload), undefined];
     }
 
     const [version, versionError] = yield* sendCommand(0xf6); // get version
@@ -1373,7 +1391,9 @@ function* handleRestoreOfficialEV3(
         }
 
         yield* put(
-            alertsShowAlert('alerts', 'unexpectedError', { error: ensureError(err) }),
+            alertsShowAlert('alerts', 'unexpectedError', {
+                error: ensureError(err),
+            }),
         );
         yield* put(firmwareDidFailToRestoreOfficialEV3());
     }

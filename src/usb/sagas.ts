@@ -173,8 +173,11 @@ function* handleUsbConnectPybricks(hotPlugDevice?: USBDevice): Generator {
             ),
         );
 
-        // FIXME: Implement error handling here
-        console.error(selectErr);
+        // TODO: show error message to user here
+        console.error('Failed to select USB device configuration:', selectErr);
+        yield* put(usbDidFailToConnectPybricks());
+        yield* cleanup();
+        return;
     }
 
     assert(

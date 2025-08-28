@@ -92,7 +92,7 @@ function getHubTypeNameFromMetadata(metadata: FirmwareMetadata | undefined): str
         case HubType.EssentialHub:
             return 'SPIKE Essential hub';
         case HubType.EV3:
-            return 'MINDSTORMS EV3 Hub';
+            return 'MINDSTORMS EV3 hub';
         default:
             return '?';
     }
@@ -462,7 +462,7 @@ export const InstallPybricksDialog: React.FunctionComponent = () => {
     );
     const dispatch = useDispatch();
     const [hubName, setHubName] = useState('');
-    const [licenseAccepted, setLicenseAccepted] = useState(!false);
+    const [licenseAccepted, setLicenseAccepted] = useState(false);
     const [hubType] = useHubPickerSelectedHub();
     const { firmwareData, firmwareError } = useFirmware(hubType);
     const [customFirmwareZip, setCustomFirmwareZip] = useState<File>();
