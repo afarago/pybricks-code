@@ -348,25 +348,8 @@ function* loadFirmware(
         const metadataV2 = metadata as FirmwareMetadataV200;
         const checksum_size = metadataV2['checksum-size'];
 
-        // TODO: v2.x supports setting checksum size, prior it was a fixed 4 bytes - check if it 4 or checksum_size
         const firmware = new Uint8Array(firmwareBase.length + 4);
         const firmwareView = new DataView(firmware.buffer);
-        const checksum = (function () {
-            switch (metadata['checksum-type']) {
-                case 'sum':
-                    console.log('computing sum');
-                    return sumComplement32(
-                        firmwareIterator(firmwareView, metadataV2['checksum-size']),
-                    );
-                case 'crc32':
-                    console.log('computing crc32');
-                    return crc32(
-                        firmwareIterator(firmwareView, metadataV2['checksum-size']),
-                    );
-                default:
-                    return 0;
-            }
-        })();
 
         firmware.set(firmwareBase);
 
@@ -377,6 +360,21 @@ function* loadFirmware(
                 metadataV2['hub-name-offset'],
             );
         }
+
+        const checksum = (function () {
+            switch (metadata['checksum-type']) {
+                case 'sum':
+                    return sumComplement32(
+                        firmwareIterator(firmwareView, metadataV2['checksum-size']),
+                    );
+                case 'crc32':
+                    return crc32(
+                        firmwareIterator(firmwareView, metadataV2['checksum-size']),
+                    );
+                default:
+                    return 0;
+            }
+        })();
 
         if (checksum === undefined) {
             // FIXME: we should return error/throw instead
@@ -413,7 +411,6 @@ function* handleFlashFirmware(action: ReturnType<typeof flashFirmware>): Generat
         if (action.data !== null) {
             ({ firmware, deviceId } = yield* loadFirmware(action.data, action.hubName));
         }
-        console.log('>>> deviceId', deviceId, 'firmware', firmware, action.data);
 
         yield* put(connect());
         const connectResult = yield* take([didConnect, didFailToConnect]);
@@ -601,7 +598,6 @@ function* handleFlashFirmware(action: ReturnType<typeof flashFirmware>): Generat
         }
 
         if (flash.checksum !== runningChecksum) {
-            console.error('>>>> checksum', flash.checksum, runningChecksum);
             // istanbul ignore next
             if (process.env.NODE_ENV !== 'test') {
                 console.error(
