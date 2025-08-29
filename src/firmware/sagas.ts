@@ -1158,62 +1158,58 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
             }
         });
 
-        try {
-            // Send the command
-            const dataBuffer = new Uint8Array((payload?.byteLength ?? 0) + 6);
-            const data = new DataView(dataBuffer.buffer);
+        // Send the command
+        const dataBuffer = new Uint8Array((payload?.byteLength ?? 0) + 6);
+        const data = new DataView(dataBuffer.buffer);
 
-            data.setInt16(0, (payload?.byteLength ?? 0) + 4, true);
-            data.setInt16(2, 0, true); // TODO: reply number
-            data.setUint8(4, 0x01); // system command w/ reply
-            data.setUint8(5, command);
-            if (payload) {
-                dataBuffer.set(payload, 6);
-            }
-
-            const [, sendError] = yield* call(() =>
-                maybe(hidDevice.sendReport(0, data)),
-            );
-
-            if (sendError) {
-                return [undefined, sendError];
-            }
-
-            const { reply, timeout } = yield* race({
-                reply: take(replyChannel),
-                timeout: delay(5000),
-            });
-
-            if (timeout) {
-                return [undefined, new Error('Timeout waiting for EV3 reply')];
-            }
-
-            defined(reply);
-
-            if (reply.replyCommand !== command) {
-                return [
-                    undefined,
-                    new Error(
-                        `EV3 reply command mismatch: expected ${command}, got ${reply.replyCommand}`,
-                    ),
-                ];
-            }
-
-            if (reply.status !== 0) {
-                return [
-                    undefined,
-                    new Error(
-                        `EV3 reply status error: ${reply.status} for command ${command}`,
-                    ),
-                ];
-            }
-
-            return [new DataView(reply.payload), undefined];
-        } finally {
-            // Always clean up
-            yield* cancel(forwardTask);
-            yield* call(() => replyChannel.close());
+        data.setInt16(0, (payload?.byteLength ?? 0) + 4, true);
+        data.setInt16(2, 0, true); // TODO: reply number
+        data.setUint8(4, 0x01); // system command w/ reply
+        data.setUint8(5, command);
+        if (payload) {
+            dataBuffer.set(payload, 6);
         }
+
+        const [, sendError] = yield* call(() => maybe(hidDevice.sendReport(0, data)));
+
+        if (sendError) {
+            return [undefined, sendError];
+        }
+
+        const { reply, timeout } = yield* race({
+            reply: take(replyChannel),
+            timeout: delay(5000),
+        });
+
+        if (timeout) {
+            return [undefined, new Error('Timeout waiting for EV3 reply')];
+        }
+
+        defined(reply);
+
+        if (reply.replyCommand !== command) {
+            return [
+                undefined,
+                new Error(
+                    `EV3 reply command mismatch: expected ${command}, got ${reply.replyCommand}`,
+                ),
+            ];
+        }
+
+        if (reply.status !== 0) {
+            return [
+                undefined,
+                new Error(
+                    `EV3 reply status error: ${reply.status} for command ${command}`,
+                ),
+            ];
+        }
+
+        // Clean up
+        yield* cancel(forwardTask);
+        yield* call(() => replyChannel.close());
+
+        return [new DataView(reply.payload), undefined];
     }
 
     const [version, versionError] = yield* sendCommand(0xf6); // get version
