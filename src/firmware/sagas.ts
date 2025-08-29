@@ -15,10 +15,11 @@ import moveHubZip from '@pybricks/firmware/build/movehub.zip';
 import technicHubZip from '@pybricks/firmware/build/technichub.zip';
 import { WebDFU } from 'dfu';
 import { AnyAction } from 'redux';
-import { channel, eventChannel } from 'redux-saga';
+import { eventChannel } from 'redux-saga';
 import { ActionPattern } from 'redux-saga/effects';
 import {
     SagaGenerator,
+    actionChannel,
     all,
     call,
     cancel,
@@ -1140,23 +1141,9 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
         payload?: Uint8Array,
     ): SagaGenerator<[DataView | undefined, Error | undefined]> {
         // Create a channel that buffers the actions
-        const replyChannel = yield* call(
-            channel<ReturnType<typeof firmwareDidReceiveEV3Reply>>,
+        const replyChannel = yield* actionChannel(
+            firmwareDidReceiveEV3Reply.when((a) => a.replyCommand === command),
         );
-
-        // Create a task that forwards matching actions to our channel
-        // Sending the command and setting up the listener are not atomic,
-        // so we might receive the reply before we start listening. To handle
-        // this, we keep listening until we find the matching reply.
-        const forwardTask = yield* fork(function* () {
-            while (true) {
-                const action = yield* take(firmwareDidReceiveEV3Reply);
-                if (action.replyCommand === command) {
-                    yield* put(replyChannel, action);
-                    break; // Stop after finding the matching reply
-                }
-            }
-        });
 
         // Send the command
         const dataBuffer = new Uint8Array((payload?.byteLength ?? 0) + 6);
@@ -1206,7 +1193,6 @@ function* handleFlashEV3(action: ReturnType<typeof firmwareFlashEV3>): Generator
         }
 
         // Clean up
-        yield* cancel(forwardTask);
         yield* call(() => replyChannel.close());
 
         return [new DataView(reply.payload), undefined];
