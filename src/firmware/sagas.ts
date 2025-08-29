@@ -1387,9 +1387,7 @@ function* handleRestoreOfficialEV3(
         }
 
         yield* put(
-            alertsShowAlert('alerts', 'unexpectedError', {
-                error: ensureError(err),
-            }),
+            alertsShowAlert('alerts', 'unexpectedError', { error: ensureError(err) }),
         );
         yield* put(firmwareDidFailToRestoreOfficialEV3());
     }
